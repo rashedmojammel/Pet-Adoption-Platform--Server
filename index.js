@@ -5,7 +5,7 @@ const port = process.env.PORT || 5000;
 const cors = require('cors');
 
 
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion,ObjectId } = require('mongodb');
 dotenv.config();
 
 app.use(cors());
@@ -38,6 +38,23 @@ async function run() {
     app.get('/pets', async (req, res) => {
       const pets = await petsCollection.find().toArray();
       res.json(pets);
+    });
+
+    app.get('/pets/:id', async (req, res) => {
+      const { id } = req.params;
+      const pet = await petsCollection.findOne({ _id: new ObjectId(id) });
+      res.json(pet);
+    });
+
+    app.patch('/pets/:id', async (req, res) => {
+      const { id } = req.params;
+      const updateData = req.body;
+      console.log(updateData);
+      const result = await petsCollection.updateOne(
+        { _id: new ObjectId(id) },
+        { $set: updateData }
+      );
+      res.json(result);
     });
 
     app.post('/pets', async (req, res) => {
