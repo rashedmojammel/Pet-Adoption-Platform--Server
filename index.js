@@ -19,6 +19,12 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   }
 });
+const verifyToken = (req, res, next) => {
+  const header = req?.headers.authorization;
+  const token = header?.split(' ')[1];
+  console.log(token);
+  next();
+} 
 
 
 app.get('/', (req, res) => {
@@ -34,7 +40,7 @@ async function run() {
 
     const db = client.db('pet_adoption_platform');
     const petsCollection = db.collection('pets');
-    const apoptCollection = db.collection('adoption_requests');
+    const adoptCollection = db.collection('adoption_requests');
 
 
 
@@ -43,7 +49,9 @@ async function run() {
       res.json(pets);
     });
 
-    app.get('/pets/:id', async (req, res) => {
+    app.get('/pets/:id', verifyToken ,async (req, res) => {
+      const header = req.headers.authorization;
+      console.log(header);
       const { id } = req.params;
       const pet = await petsCollection.findOne({ _id: new ObjectId(id) });
       res.json(pet);
@@ -74,10 +82,16 @@ async function run() {
       res.json(result);
     });
 
+    app.get('/adoption-requests/:userId', async (req, res) => {
+      const { userId } = req.params;
+      const requests = await adoptCollection.find({ userId: userId }).toArray();
+      res.json(requests);
+    });
+
     app.post('/adoption-requests', async (req, res) => {
       const adoptData = req.body;
       console.log(adoptData);
-      const result = await apoptCollection.insertOne(adoptData);
+      const result = await adoptCollection.insertOne(adoptData);
       res.json(result);
     });
 
