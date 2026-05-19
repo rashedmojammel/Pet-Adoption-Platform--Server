@@ -34,6 +34,9 @@ async function run() {
 
     const db = client.db('pet_adoption_platform');
     const petsCollection = db.collection('pets');
+    const apoptCollection = db.collection('adoption_requests');
+
+
 
     app.get('/pets', async (req, res) => {
       const pets = await petsCollection.find().toArray();
@@ -71,6 +74,12 @@ async function run() {
       res.json(result);
     });
 
+    app.post('/adoption-requests', async (req, res) => {
+      const adoptData = req.body;
+      console.log(adoptData);
+      const result = await apoptCollection.insertOne(adoptData);
+      res.json(result);
+    });
 
 
 
