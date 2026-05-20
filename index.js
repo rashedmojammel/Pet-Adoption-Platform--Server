@@ -6,6 +6,7 @@ const cors = require('cors');
 
 
 const { MongoClient, ServerApiVersion,ObjectId } = require('mongodb');
+const { createRemoteJWKSet, jwtVerify } = require('jose-cjs');
 dotenv.config();
 
 app.use(cors());
@@ -19,12 +20,38 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   }
 });
-const verifyToken = (req, res, next) => {
+
+const JWKS = createRemoteJWKSet(
+
+  new URL(`${process.env.CLIENT_URL}/api/auth/jwks`)  
+)
+
+
+const verifyToken = async(req, res, next) => {
+  
   const header = req?.headers.authorization;
+  if(!header){
+    return res.status(401).json({ message: 'Unauthorized' });
+  }
+
   const token = header?.split(' ')[1];
-  console.log(token);
-  next();
+  if(!token){
+    return res.status(401).json({ message: 'Unauthorized' });
+  } 
+
+  try {
+     const { payload } = await jwtVerify(token, JWKS)
+     console.log(payload);
+     next();
+
+  }catch(error)
+  {
+    return res.status(401).json({ message: 'Unauthorized' }); 
+
+  }
 } 
+
+
 
 
 app.get('/', (req, res) => {
@@ -36,7 +63,7 @@ async function run() {
 
     
     // Connect the client to the server	(optional starting in v4.7)
-    await client.connect();
+    // await client.connect();
 
     const db = client.db('pet_adoption_platform');
     const petsCollection = db.collection('pets');
@@ -44,14 +71,25 @@ async function run() {
 
 
 
-    app.get('/pets', async (req, res) => {
-      const pets = await petsCollection.find().toArray();
-      res.json(pets);
-    });
+  // Replace only this route in your existing index.js
+app.get('/pets', async (req, res) => {
+  const { search, species } = req.query;
+  const query = {};
+
+  if (search) {
+    query.petName = { $regex: search, $options: 'i' };
+  }
+
+  if (species) {
+    const speciesArr = species.split(',').map(s => s.trim());
+    query.species = { $in: speciesArr };
+  }
+
+  const pets = await petsCollection.find(query).toArray();
+  res.json(pets);
+});
 
     app.get('/pets/:id', verifyToken ,async (req, res) => {
-      const header = req.headers.authorization;
-      console.log(header);
       const { id } = req.params;
       const pet = await petsCollection.findOne({ _id: new ObjectId(id) });
       res.json(pet);
@@ -75,6 +113,8 @@ async function run() {
     });
 
 
+
+
     app.post('/pets', async (req, res) => {
       const pet = req.body;
       console.log(pet);
@@ -82,24 +122,112 @@ async function run() {
       res.json(result);
     });
 
-    app.get('/adoption-requests/:userId', async (req, res) => {
-      const { userId } = req.params;
-      const requests = await adoptCollection.find({ userId: userId }).toArray();
-      res.json(requests);
-    });
+  app.get('/adoption-requests/user/:userId', async (req, res) => {
+  const { userId } = req.params;
+  const requests = await adoptCollection.find({ userId: userId }).toArray();
+  res.json(requests);
+});
+    
+// Get pets by owner email (for my-listings page)
+app.get('/my-listings', async (req, res) => {
+  const { email } = req.query;
+  const pets = await petsCollection.find({ ownerEmail: email }).toArray();
+  res.json(pets);
+});
 
-    app.post('/adoption-requests', async (req, res) => {
-      const adoptData = req.body;
-      console.log(adoptData);
-      const result = await adoptCollection.insertOne(adoptData);
-      res.json(result);
-    });
+// Get all requests for a specific pet (owner views them)
+app.get('/adoption-requests/pet/:petId', async (req, res) => {
+  const { petId } = req.params;
+  const requests = await adoptCollection.find({ petId }).toArray();
+  res.json(requests);
+});
+
+app.post('/adoption-requests', async (req, res) => {
+  const { petId, userEmail } = req.body;
+
+  const pet = await petsCollection.findOne({ _id: new ObjectId(petId) });
+
+  if (pet?.ownerEmail === userEmail) {
+    return res.status(403).json({ error: 'You cannot adopt your own pet' });
+  }
+
+  if (pet?.status === 'adopted') {
+    return res.status(400).json({ error: 'This pet has already been adopted' });
+  }
+
+  const adoptData = {
+    ...req.body,
+    status: 'pending',
+    requestDate: new Date().toISOString(),
+  };
+
+  const result = await adoptCollection.insertOne(adoptData);
+  res.json(result);
+});
+
+app.patch('/adoption-requests/:id', async (req, res) => {
+  const { id } = req.params;
+  const { status, petId } = req.body;
+
+  if (status === 'approved' && petId) {
+    await petsCollection.updateOne(
+      { _id: new ObjectId(petId) },
+      { $set: { status: 'adopted' } }
+    );
+    await adoptCollection.updateMany(
+      { petId, _id: { $ne: new ObjectId(id) }, status: 'pending' },
+      { $set: { status: 'rejected' } }
+    );
+  }
+
+  const result = await adoptCollection.updateOne(
+    { _id: new ObjectId(id) },
+    { $set: { status } }
+  );
+  res.json(result);
+});
+
+app.delete('/adoption-requests/:id', async (req, res) => {
+  const { id } = req.params;
+  const result = await adoptCollection.deleteOne({ _id: new ObjectId(id) });
+  res.json(result);
+});
+
+// Add this new route for approve/reject
+// app.patch('/adoption-requests/:id', async (req, res) => {
+//   const { id } = req.params;
+//   const { status, petId } = req.body;
+
+//   if (status === 'approved' && petId) {
+//     // Mark pet as adopted
+//     await petsCollection.updateOne(
+//       { _id: new ObjectId(petId) },
+//       { $set: { status: 'adopted' } }
+//     );
+//     // Reject all other pending requests for this pet
+//     await adoptCollection.updateMany(
+//       { petId, _id: { $ne: new ObjectId(id) }, status: 'pending' },
+//       { $set: { status: 'rejected' } }
+//     );
+//   }
+
+//   const result = await adoptCollection.updateOne(
+//     { _id: new ObjectId(id) },
+//     { $set: { status } }
+//   );
+//   res.json(result);
+// });
+//     app.delete('/adoption-requests/:id', async (req, res) => {
+//   const { id } = req.params;
+//   const result = await adoptCollection.deleteOne({ _id: new ObjectId(id) });
+//   res.json(result);
+// });
 
 
 
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
