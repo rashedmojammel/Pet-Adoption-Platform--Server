@@ -128,14 +128,12 @@ app.get('/pets', async (req, res) => {
   res.json(requests);
 });
     
-// Get pets by owner email (for my-listings page)
 app.get('/my-listings', async (req, res) => {
   const { email } = req.query;
   const pets = await petsCollection.find({ ownerEmail: email }).toArray();
   res.json(pets);
 });
 
-// Get all requests for a specific pet (owner views them)
 app.get('/adoption-requests/pet/:petId', async (req, res) => {
   const { petId } = req.params;
   const requests = await adoptCollection.find({ petId }).toArray();
@@ -192,37 +190,6 @@ app.delete('/adoption-requests/:id', async (req, res) => {
   const result = await adoptCollection.deleteOne({ _id: new ObjectId(id) });
   res.json(result);
 });
-
-// Add this new route for approve/reject
-// app.patch('/adoption-requests/:id', async (req, res) => {
-//   const { id } = req.params;
-//   const { status, petId } = req.body;
-
-//   if (status === 'approved' && petId) {
-//     // Mark pet as adopted
-//     await petsCollection.updateOne(
-//       { _id: new ObjectId(petId) },
-//       { $set: { status: 'adopted' } }
-//     );
-//     // Reject all other pending requests for this pet
-//     await adoptCollection.updateMany(
-//       { petId, _id: { $ne: new ObjectId(id) }, status: 'pending' },
-//       { $set: { status: 'rejected' } }
-//     );
-//   }
-
-//   const result = await adoptCollection.updateOne(
-//     { _id: new ObjectId(id) },
-//     { $set: { status } }
-//   );
-//   res.json(result);
-// });
-//     app.delete('/adoption-requests/:id', async (req, res) => {
-//   const { id } = req.params;
-//   const result = await adoptCollection.deleteOne({ _id: new ObjectId(id) });
-//   res.json(result);
-// });
-
 
 
 
